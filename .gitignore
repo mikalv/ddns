@@ -1,4 +1,5 @@
 *.swp
 pdns_backend.py
+/docker/settings-override.env
 /ddns
 dump.rdb

@@ -9,13 +9,18 @@ services:
     build:
       context: ..
       dockerfile: docker/ddns/Dockerfile
+    env_file:
+      - ./settings.env
+      - ./settings-override.env
     volumes:
       - ddns:/go/bin/
 
   ddns-web:
-    restart: unless-stopped
+    extends:
+      service: ddns
     build:
       context: web/
+      dockerfile: Dockerfile
     depends_on:
       - redis
     volumes_from:
@@ -24,9 +29,11 @@ services:
       - "8080:8080"
 
   ddns-powerdns:
-    restart: unless-stopped
+    extends:
+      service: ddns
     build:
       context: powerdns/
+      dockerfile: Dockerfile
     depends_on:
       - redis
     volumes_from:
