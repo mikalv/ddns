@@ -9,7 +9,17 @@ import (
 	"regexp"
 )
 
-func RunWebService(conn *RedisConnection) {
+type WebService struct {
+	hosts HostBackend
+}
+
+func NewWebService(hosts HostBackend) *WebService {
+	return &WebService{
+		hosts: hosts,
+	}
+}
+
+func (w *WebService) Run() {
 	r := gin.Default()
 	r.SetHTMLTemplate(BuildTemplate())
 
@@ -20,8 +30,13 @@ func RunWebService(conn *RedisConnection) {
 	r.GET("/available/:hostname", func(c *gin.Context) {
 		hostname, valid := ValidHostname(c.Params.ByName("hostname"))
 
+		if valid {
+			_, err := w.hosts.GetHost(hostname)
+			valid = err == nil
+		}
+
 		c.JSON(200, gin.H{
-			"available": valid && !conn.HostExist(hostname),
+			"available": valid,
 		})
 	})
 
@@ -33,7 +48,9 @@ func RunWebService(conn *RedisConnection) {
 			return
 		}
 
-		if conn.HostExist(hostname) {
+		var err error
+
+		if _, err = w.hosts.GetHost(hostname); err == nil {
 			c.JSON(403, gin.H{
 				"error": "This hostname has already been registered.",
 			})
@@ -43,7 +60,10 @@ func RunWebService(conn *RedisConnection) {
 		host := &Host{Hostname: hostname, Ip: "127.0.0.1"}
 		host.GenerateAndSetToken()
 
-		conn.SaveHost(host)
+		if err = w.hosts.SetHost(host); err != nil {
+			c.JSON(400, gin.H{"error": "Could not register host."})
+			return
+		}
 
 		c.JSON(200, gin.H{
 			"hostname":    host.Hostname,
@@ -61,14 +81,13 @@ func RunWebService(conn *RedisConnection) {
 			return
 		}
 
-		if !conn.HostExist(hostname) {
+		host, err := w.hosts.GetHost(hostname)
+		if err != nil {
 			c.JSON(404, gin.H{
 				"error": "This hostname has not been registered or is expired.",
 			})
 			return
 		}
-
-		host := conn.GetHost(hostname)
 
 		if host.Token != token {
 			c.JSON(403, gin.H{
@@ -86,7 +105,11 @@ func RunWebService(conn *RedisConnection) {
 		}
 
 		host.Ip = ip
-		conn.SaveHost(host)
+		if err = w.hosts.SetHost(host); err != nil {
+			c.JSON(400, gin.H{
+				"error": "Could not update registered IP address",
+			})
+		}
 
 		c.JSON(200, gin.H{
 			"current_ip": ip,

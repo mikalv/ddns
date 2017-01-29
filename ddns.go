@@ -18,11 +18,12 @@ const (
 )
 
 var (
-	DdnsDomain          string
-	DdnsWebListenSocket string
-	DdnsRedisHost       string
-	DdnsSoaFqdn         string
-	Verbose             bool
+	DdnsDomain             string
+	DdnsWebListenSocket    string
+	DdnsRedisHost          string
+	DdnsSoaFqdn            string
+	DdnsHostExpirationDays int
+	Verbose                bool
 )
 
 func init() {
@@ -37,6 +38,9 @@ func init() {
 
 	flag.StringVar(&DdnsSoaFqdn, "soa_fqdn", "",
 		"The FQDN of the DNS server which is returned as a SOA record")
+
+	flag.IntVar(&DdnsHostExpirationDays, "expiration-days", 10,
+		"The number of days after a host is released when it is not updated")
 
 	flag.BoolVar(&Verbose, "verbose", false,
 		"Be more verbose")
@@ -72,16 +76,18 @@ func PrepareForExecution() string {
 func main() {
 	cmd := PrepareForExecution()
 
-	conn := OpenConnection(DdnsRedisHost)
-	defer conn.Close()
+	backend := NewRedisBackend(DdnsRedisHost, DdnsHostExpirationDays)
+	defer backend.pool.Close()
 
 	switch cmd {
 	case CmdBackend:
-		log.Printf("Starting PDNS Backend\n")
-		RunBackend(conn)
+		log.Println("Starting PDNS Backend")
+		NewPowerDnsBackend(backend).Run()
+
 	case CmdWeb:
-		log.Printf("Starting Web Service\n")
-		RunWebService(conn)
+		log.Println("Starting Web Service")
+		NewWebService(backend).Run()
+
 	default:
 		usage()
 	}

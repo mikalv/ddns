@@ -8,72 +8,75 @@ import (
 	"time"
 )
 
-const HostExpirationSeconds int = 10 * 24 * 60 * 60 // 10 Days
+type HostBackend interface {
+	GetHost(string) (*Host, error)
 
-type RedisConnection struct {
-	*redis.Pool
+	SetHost(*Host) error
 }
 
-func OpenConnection(server string) *RedisConnection {
-	return &RedisConnection{newPool(server)}
+type RedisBackend struct {
+	expirationSeconds int
+	pool              *redis.Pool
 }
 
-func newPool(server string) *redis.Pool {
-	return &redis.Pool{
-		MaxIdle: 3,
+func NewRedisBackend(server string, expirationDays int) *RedisBackend {
+	return &RedisBackend{
+		expirationSeconds: expirationDays * 24 * 60 * 60,
+		pool: &redis.Pool{
+			MaxIdle:     3,
+			IdleTimeout: 240 * time.Second,
 
-		IdleTimeout: 240 * time.Second,
+			Dial: func() (redis.Conn, error) {
+				c, err := redis.Dial("tcp", server)
+				if err != nil {
+					return nil, err
+				}
+				return c, err
+			},
 
-		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", server)
-			if err != nil {
-				return nil, err
-			}
-			return c, err
-		},
-
-		TestOnBorrow: func(c redis.Conn, t time.Time) error {
-			_, err := c.Do("PING")
-			return err
+			TestOnBorrow: func(c redis.Conn, t time.Time) error {
+				_, err := c.Do("PING")
+				return err
+			},
 		},
 	}
 }
 
-func (self *RedisConnection) GetHost(name string) *Host {
-	conn := self.Get()
+func (r *RedisBackend) GetHost(name string) (*Host, error) {
+	conn := r.pool.Get()
 	defer conn.Close()
 
 	host := Host{Hostname: name}
 
-	if self.HostExist(name) {
-		data, err := redis.Values(conn.Do("HGETALL", host.Hostname))
-		HandleErr(err)
+	var err error
+	var data []interface{}
 
-		HandleErr(redis.ScanStruct(data, &host))
+	if data, err = redis.Values(conn.Do("HGETALL", host.Hostname)); err != nil {
+		return nil, err
 	}
 
-	return &host
+	if err = redis.ScanStruct(data, &host); err != nil {
+		return nil, err
+	}
+
+	return &host, nil
 }
 
-func (self *RedisConnection) SaveHost(host *Host) {
-	conn := self.Get()
+func (r *RedisBackend) SetHost(host *Host) error {
+	conn := r.pool.Get()
 	defer conn.Close()
 
-	_, err := conn.Do("HMSET", redis.Args{}.Add(host.Hostname).AddFlat(host)...)
-	HandleErr(err)
+	var err error
 
-	_, err = conn.Do("EXPIRE", host.Hostname, HostExpirationSeconds)
-	HandleErr(err)
-}
+	if _, err = conn.Do("HMSET", redis.Args{}.Add(host.Hostname).AddFlat(host)...); err != nil {
+		return err
+	}
 
-func (self *RedisConnection) HostExist(name string) bool {
-	conn := self.Get()
-	defer conn.Close()
+	if _, err = conn.Do("EXPIRE", host.Hostname, r.expirationSeconds); err != nil {
+		return err
+	}
 
-	exists, err := redis.Bool(conn.Do("EXISTS", name))
-	HandleErr(err)
-
-	return exists
+	return nil
 }
 
 type Host struct {
@@ -82,17 +85,17 @@ type Host struct {
 	Token    string `redis:"token"`
 }
 
-func (self *Host) GenerateAndSetToken() {
+func (h *Host) GenerateAndSetToken() {
 	hash := sha1.New()
 	hash.Write([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
-	hash.Write([]byte(self.Hostname))
+	hash.Write([]byte(h.Hostname))
 
-	self.Token = fmt.Sprintf("%x", hash.Sum(nil))
+	h.Token = fmt.Sprintf("%x", hash.Sum(nil))
 }
 
 // Returns true when this host has a IPv4 Address and false if IPv6
-func (self *Host) IsIPv4() bool {
-	if strings.Contains(self.Ip, ".") {
+func (h *Host) IsIPv4() bool {
+	if strings.Contains(h.Ip, ".") {
 		return true
 	}
 
