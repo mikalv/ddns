@@ -9,15 +9,11 @@ services:
     build:
       context: ..
       dockerfile: docker/ddns/Dockerfile
-    env_file:
-      - ./settings.env
-      - ./settings-override.env
     volumes:
       - ddns:/go/bin/
 
   ddns-web:
-    extends:
-      service: ddns
+    restart: unless-stopped
     build:
       context: web/
       dockerfile: Dockerfile
@@ -25,12 +21,11 @@ services:
       - redis
     volumes_from:
       - ddns
-    ports:
-      - "8080:8080"
+    environment:
+      DDNS_DOMAIN: d.example.net
 
   ddns-powerdns:
-    extends:
-      service: ddns
+    restart: unless-stopped
     build:
       context: powerdns/
       dockerfile: Dockerfile
@@ -38,13 +33,11 @@ services:
       - redis
     volumes_from:
       - ddns
-    ports:
-      - "5553/udp:53/udp"
-#      - "53/udp:53/udp"
-#      - "53:53"
+    environment:
+      DDNS_DOMAIN: d.example.net
+      DDNS_SOA_DOMAIN: soa.example.net
+      DDNS_VERBOSE: --verbose
 
   redis:
     restart: unless-stopped
     image: redis:latest
-#    volumes:
-#      - "/root/redis:/data"
