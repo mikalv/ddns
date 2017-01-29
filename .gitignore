@@ -1,5 +1,4 @@
 *.swp
-pdns.conf
 pdns_backend.py
-ddns
+/ddns
 dump.rdb
