@@ -95,5 +95,5 @@ func HandleRequest(line string, conn *RedisConnection) responder {
 
 func getSoaSerial() int64 {
 	// return current time in milliseconds
-	return time.Now().UnixNano()
+	return time.Now().Unix()
 }
