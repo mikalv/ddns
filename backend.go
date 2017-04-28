@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 	"time"
 )
@@ -13,39 +13,45 @@ import (
 // the response data if possible
 type PowerDnsBackend struct {
 	hosts HostBackend
+	in    io.Reader
+	out   io.Writer
 }
 
-func NewPowerDnsBackend(backend HostBackend) *PowerDnsBackend {
+func NewPowerDnsBackend(backend HostBackend, in io.Reader, out io.Writer) *PowerDnsBackend {
 	return &PowerDnsBackend{
 		hosts: backend,
+		in:    in,
+		out:   out,
 	}
 }
 
 func (b *PowerDnsBackend) Run() {
-	bio := bufio.NewReader(os.Stdin)
+	bio := bufio.NewReader(b.in)
 
 	// handshake with PowerDNS
-	_, _, _ = bio.ReadLine()
-	fmt.Println("OK\tDDNS Go Backend")
+	handshake, _, _ := bio.ReadLine()
+	fmt.Fprintln(b.out, "OK\tDDNS Backend")
+
+	fmt.Fprintf(b.out, "LOG\tHandshake'%s'\n", handshake)
 
 	for {
 		line, _, err := bio.ReadLine()
 		if err != nil {
-			fmt.Println("FAIL")
+			fmt.Fprintln(b.out, "FAIL")
 			continue
 		}
 
 		if err = b.HandleRequest(string(line)); err != nil {
-			fmt.Printf("LOG\t'%s'\n", err)
+			fmt.Fprintf(b.out, "LOG\t'%s'\n", err)
 		}
 
-		fmt.Println("END")
+		fmt.Fprintln(b.out, "END")
 	}
 }
 
 func (b *PowerDnsBackend) HandleRequest(line string) error {
 	if Verbose {
-		fmt.Printf("LOG\t'%s'\n", line)
+		fmt.Fprintf(b.out, "LOG\t'%s'\n", line)
 	}
 
 	parts := strings.Split(line, "\t")
@@ -98,13 +104,13 @@ func (b *PowerDnsBackend) HandleRequest(line string) error {
 		return nil
 	}
 
-	fmt.Printf("DATA\t%s\t%s\t%s\t10\t%s\t%s\n",
+	fmt.Fprintf(b.out, "DATA\t%s\t%s\t%s\t10\t%s\t%s\n",
 		query_name, query_class, record, query_id, response)
 
 	return nil
 }
 
-func getSoaSerial() int64 {
+func (b *PowerDnsBackend) getSoaSerial() int64 {
 	// return current time in seconds
 	return time.Now().Unix()
 }

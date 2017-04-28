@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -82,7 +83,7 @@ func main() {
 	switch cmd {
 	case CmdBackend:
 		log.Println("Starting PDNS Backend")
-		NewPowerDnsBackend(backend).Run()
+		NewPowerDnsBackend(backend, os.Stdin, os.Stdout).Run()
 
 	case CmdWeb:
 		log.Println("Starting Web Service")
